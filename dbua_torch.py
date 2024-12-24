@@ -95,8 +95,8 @@ CTRUE = {
 DATA_DIR = Path("./data")
 
 def to_cuda(tensor):
-    if torch.cuda.is_available():
-        return tensor.cuda()
+    # if torch.cuda.is_available():
+    #     return tensor.cuda()
     return tensor
 
 
@@ -140,7 +140,8 @@ def plot_errors_vs_sound_speeds(c0, dsb, dlc, dcf, dpe, sample):
 
 def main(sample, loss_name):
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cpu"
 
     assert (
         sample in CTRUE
@@ -209,6 +210,8 @@ def main(sample, loss_name):
 
     def loss_wrapper(func, c):
         t = tof_patch(c)
+        t = torch.clip(t, 0)
+        print(t)
         return func(iqdata, t - t0, t, fs, fd)
 
     # Define loss functions
