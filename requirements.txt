@@ -1,0 +1,9 @@
+hdf5storage==0.1.19
+jax==0.4.35
+jaxopt==0.8.3
+matplotlib~=3.9.2
+numpy~=1.26.4
+optax==0.2.4
+tqdm~=4.66.5
+
+torch~=2.5.1+cu124
