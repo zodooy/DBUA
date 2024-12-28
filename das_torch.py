@@ -36,6 +36,7 @@ def das(iqraw, tA, tB, fs, fd, A=None, B=None, apoA=1, apoB=1, interp="cubic"):
     # 基带插值，将iq数据按照时间延迟t进行插值
     def bbint(iq, t):
         iqfoc = fint(iq, fs * t) # 插值时间通过fs * t转换为采样点位置
+        # print(iqfoc)
         return iqfoc * torch.exp(2j * torch.pi * fd * t) # 对插值后的 IQ 数据进行基带调制
 
     # 内层函数：处理单个接收通道
@@ -52,7 +53,7 @@ def safe_access(x, s):
     """Safe access to array x at indices s."""
     s = s.long()
     valid = (s >= 0) & (s < x.size(0))
-    return torch.where(valid, torch.where(valid, x[s], 0), 0)
+    return x[s * valid] * valid
 
 
 # 最近邻插值

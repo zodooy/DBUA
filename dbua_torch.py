@@ -210,8 +210,6 @@ def main(sample, loss_name):
 
     def loss_wrapper(func, c):
         t = tof_patch(c)
-        t = torch.clip(t, 0)
-        print(t)
         return func(iqdata, t - t0, t, fs, fd)
 
     # Define loss functions
