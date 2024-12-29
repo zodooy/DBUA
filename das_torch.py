@@ -36,16 +36,16 @@ def das(iqraw, tA, tB, fs, fd, A=None, B=None, apoA=1, apoB=1, interp="cubic"):
     # 基带插值，将iq数据按照时间延迟t进行插值
     def bbint(iq, t):
         iqfoc = fint(iq, fs * t) # 插值时间通过fs * t转换为采样点位置
-        # print(iqfoc)
         return iqfoc * torch.exp(2j * torch.pi * fd * t) # 对插值后的 IQ 数据进行基带调制
 
     # 内层函数：处理单个接收通道
     def das_b(x):
         iq_i, tA_i = x
-        return torch.tensordot(B.to(torch.complex64), vmap(bbint)(iq_i, tA_i + tB) * apoB, dims=([-1], [0]))
+
+        return torch.tensordot(B.to(torch.complex128), vmap(bbint)(iq_i, tA_i + tB) * apoB, dims=([-1], [0]))
 
     # 外层函数：处理多个发射通道
-    return torch.tensordot(A.to(torch.complex64), torch.stack([das_b(x) for x in zip(iqraw, tA)]) * apoA, dims=([-1], [0]))
+    return torch.tensordot(A.to(torch.complex128), torch.stack([das_b(x) for x in zip(iqraw, tA)]) * apoA, dims=([-1], [0]))
 
 
 # 安全访问，避免访问越界

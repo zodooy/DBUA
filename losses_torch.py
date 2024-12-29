@@ -7,7 +7,8 @@ def lag_one_coherence(iq, t_tx, t_rx, fs, fd):
     """
     Lag-one coherence of the receive aperture.
     """
-    iq = iq.permute(1, 0, 2)  # 将接收孔径数据移动到第 0 维
+    iq = torch.transpose(iq, 0, 1)  # 将接收孔径数据移动到第 0 维
+    # iq = iq.permute(1, 0, 2)
     # 计算对接收孔径的时间延迟修正
     # 对比das传入的参数：iqraw=iq, tA=t_rx, tB=t_tx, fs=fs, fd=fd, A=以接收孔径数量的单位阵
     rxdata = das(iq, t_rx, t_tx, fs, fd, torch.eye(iq.shape[0], device=iq.device))  # 时间对齐后的 IQ 数据
@@ -24,7 +25,8 @@ def coherence_factor(iq, t_tx, t_rx, fs, fd):
     """
     The coherence factor of the receive aperture.
     """
-    iq = iq.permute(1, 0, 2)  # 将接收孔径数据移动到第 0 维
+    iq = torch.transpose(iq, 0, 1)  # 将接收孔径数据移动到第 0 维
+    # iq = iq.permute(1, 0, 2)
     rxdata = das(iq, t_rx, t_tx, fs, fd, torch.eye(iq.shape[0], device=iq.device))  # 时间对齐后的 IQ 数据
 
     # 计算相干因子
@@ -44,8 +46,10 @@ def total_variation(c):
     """
     Total variation of the sound speed map `c` in x and z directions.
     """
-    tvx = torch.nanmean(torch.square(c[:-1, :] - c[1:, :]))
-    tvz = torch.nanmean(torch.square(c[:, :-1] - c[:, 1:]))
+    tvx = torch.nanmean(torch.square(torch.diff(c, dim=0)))
+    # tvx = torch.nanmean(torch.square(c[:-1, :] - c[1:, :]))
+    tvz = torch.nanmean(torch.square(torch.diff(c, dim=1)))
+    # tvz = torch.nanmean(torch.square(c[:, :-1] - c[:, 1:]))
     return tvx + tvz
 
 
@@ -61,7 +65,7 @@ def phase_error(iq, t_tx, t_rx, fs, fd, thresh=0.9):
     halfsa = 8  # 子孔径半径
     dx = 1  # 子孔径步长
     for diag in range(-halfsa, halfsa + 1):
-        mask += torch.diag(torch.ones((ntx - abs(diag),), device=iq.device), diag)
+        mask = mask + torch.diag(torch.ones((ntx - abs(diag),), device=iq.device), diag)
     mask = mask[halfsa : mask.shape[0] - halfsa : dx]
     At = torch.flip(mask, dims=(0,))  # 上下翻转
     Ar = mask
