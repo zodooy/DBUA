@@ -133,8 +133,7 @@ def plot_errors_vs_sound_speeds(c0, dsb, dlc, dcf, dpe, sample):
     plt.ylabel("Loss function")
     plt.title(sample)
     plt.legend()
-    plt.savefig(f"images/losses_{sample}.png")
-    plt.savefig("scratch.png")
+    plt.savefig(f"images/losses_{sample}_torch.png")
     plt.clf()
 
 
@@ -214,15 +213,15 @@ def main(sample, loss_name):
 
     # Define loss functions
     sb_loss = lambda c: 1 - loss_wrapper(speckle_brightness, c)
-    lc_loss = lambda c: 1 - np.mean(loss_wrapper(lag_one_coherence, c))
-    cf_loss = lambda c: 1 - np.mean(loss_wrapper(coherence_factor, c))
+    lc_loss = lambda c: 1 - torch.mean(loss_wrapper(lag_one_coherence, c))
+    cf_loss = lambda c: 1 - torch.mean(loss_wrapper(coherence_factor, c))
 
     def pe_loss(c):
         t = tof_patch(c)
         dphi = phase_error(iqdata, t - t0, t, fs, fd)
         valid = dphi != 0
-        dphi = np.where(valid, np.where(valid, dphi, np.nan), np.nan)
-        return np.nanmean(np.log1p(np.square(100 * dphi)))
+        dphi = torch.where(valid, dphi, torch.nan)
+        return torch.nanmean(torch.log1p(torch.square(100 * dphi)))
 
     tv = lambda c: total_variation(c) * dxc * dzc
 
@@ -243,15 +242,15 @@ def main(sample, loss_name):
 
     # find optimal global sound speed for initalization
     c0 = to_cuda(torch.linspace(1340, 1740, 201))
-    dsb = np.array([sb_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
-    dlc = np.array([lc_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
-    dcf = np.array([cf_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
-    dpe = np.array([pe_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
+    dsb = torch.tensor([sb_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
+    dlc = torch.tensor([lc_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
+    dcf = torch.tensor([cf_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
+    dpe = torch.tensor([pe_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
     # Use the sound speed with the optimal phase error to initialize sound speed map
-    c = c0[np.argmin(dpe)] * torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))
+    c = c0[torch.argmin(dpe)] * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))
 
     # Plot global sound speed error
-    plot_errors_vs_sound_speeds(c0, dsb, dlc, dcf, dpe, sample)
+    plot_errors_vs_sound_speeds(c0.cpu(), dsb.cpu(), dlc.cpu(), dcf.cpu(), dpe.cpu(), sample)
 
     # Create the optimizer
     c = torch.tensor(c, requires_grad=True)
