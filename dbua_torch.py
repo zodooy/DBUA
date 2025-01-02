@@ -8,16 +8,13 @@ from matplotlib.animation import FFMpegWriter
 import torch
 from das_torch import das
 from paths_torch import time_of_flight
-from losses_torch import (
+from utilities.losses_torch import (
     lag_one_coherence,
     coherence_factor,
     phase_error,
     total_variation,
     speckle_brightness,
 )
-import time
-from torch import jit
-from torch import compile
 import torch.optim as optim
 
 
@@ -43,7 +40,7 @@ SOUND_SPEED_NZC = 31
 NXK, NZK = 5, 5
 
 # Phase estimate patch grid size in samples
-NXP, NZP = 17, 17
+NXP, NZP = 10, 10
 PHASE_ERROR_X_MIN = -20e-3
 PHASE_ERROR_X_MAX = 20e-3
 PHASE_ERROR_Z_MIN = 4e-3
@@ -328,19 +325,19 @@ def main(sample, loss_name):
         plt.savefig(f"scratch/{sample}.png")
 
     # Initialize figure
-    # handles = makeFigure(c, 0)
+    print("Optimization loop...")
+    handles = makeFigure(c, 0)
 
     # 优化循环初始化
-    print("Optimization loop...")
     for i in tqdm(range(N_ITERS)):
         optimizer.zero_grad()  # 清除梯度缓存
         loss_value = loss(c)  # 计算损失
         loss_value.backward()  # 计算梯度
         optimizer.step()  # 更新参数
 
-    #     makeFigure(c, i + 1, handles)  # Update figure
-    #     vobj.grab_frame()  # Add to video writer
-    # vobj.finish()  # Close video writer
+        makeFigure(c, i + 1, handles)  # Update figure
+        vobj.grab_frame()  # Add to video writer
+    vobj.finish()  # Close video writer
 
     return c
 
