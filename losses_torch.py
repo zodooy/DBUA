@@ -2,7 +2,6 @@ import torch
 import numpy as np
 from das_torch import das
 
-
 def lag_one_coherence(iq, t_tx, t_rx, fs, fd):
     """
     Lag-one coherence of the receive aperture.
@@ -18,7 +17,6 @@ def lag_one_coherence(iq, t_tx, t_rx, fs, fd):
     yy = torch.nansum(torch.abs(rxdata[1:]) ** 2, dim=0)
     ncc = xy / torch.sqrt(xx * yy)
     return ncc
-
 
 def coherence_factor(iq, t_tx, t_rx, fs, fd):
     """
@@ -39,7 +37,6 @@ def speckle_brightness(iq, t_tx, t_rx, fs, fd):
     """
     return torch.nanmean(torch.abs(das(iq, t_tx, t_rx, fs, fd)))
 
-
 def total_variation(c):
     """
     Total variation of the sound speed map `c` in x and z directions.
@@ -49,7 +46,6 @@ def total_variation(c):
     tvz = torch.nanmean(torch.square(torch.diff(c, dim=1)))
     # tvz = torch.nanmean(torch.square(c[:, :-1] - c[:, 1:]))
     return tvx + tvz
-
 
 def phase_error(iq, t_tx, t_rx, fs, fd, thresh=0.9):
     """

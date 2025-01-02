@@ -1,8 +1,36 @@
 import torch
-import numpy as np
-from torch.func import vmap
 
-def time_of_flight(x0, z0, x1, z1, xc, zc, c, fnum, npts, Dmin=3e-3):
+
+def interpolate(t, x0, z0, x1, z1, xc, zc, s):
+    xt = t * (x1 - x0) + x0  # x在t间距的空间位置
+    zt = t * (z1 - z0) + z0  # z在t间距的空间位置
+
+    # 将空间位置转换为在慢度图中的xc和zc坐标中的索引
+    dxc, dzc = xc[1] - xc[0], zc[1] - zc[0]  # 网格间距
+    # 在慢度图中获取xt、zt的索引，并保证该索引始终在有效范围[0, s.shape[0] - 1]内
+    xit = torch.clip((xt - xc[0]) / dxc, 0, s.shape[0] - 1)
+    zit = torch.clip((zt - zc[0]) / dzc, 0, s.shape[1] - 1)
+    # 找到左下邻居点和右上邻居点的索引
+    xi0 = torch.floor(xit)
+    zi0 = torch.floor(zit)
+    xi1 = xi0 + 1
+    zi1 = zi0 + 1
+
+    # （xt，zt）处的插值慢速
+    # 插值点周围的四个网格点分别为 (xi0, zi0)、(xi1, zi0)、(xi0, zi1) 和 (xi1, zi1)
+    s00 = s[xi0.int(), zi0.int()]
+    s10 = s[torch.clip(xi1, 0, s.shape[0] - 1).int(), zi0.int()]
+    s01 = s[xi0.int(), torch.clip(zi1, 0, s.shape[0] - 1).int()]
+    s11 = s[torch.clip(xi1, 0, s.shape[0] - 1).int(), torch.clip(zi1, 0, s.shape[0] - 1).int()]
+    # 双线性插值
+    w00 = (xi1 - xit) * (zi1 - zit)
+    w10 = (xit - xi0) * (zi1 - zit)
+    w01 = (xi1 - xit) * (zit - zi0)
+    w11 = (xit - xi0) * (zit - zi0)
+    return s00 * w00 + s10 * w10 + s01 * w01 + s11 * w11
+
+
+def time_of_flight(x0, z0, x1, z1, xc, zc, c, fnum: float, npts: int, Dmin: float):
     """
     根据在网格点（xc，zc）上定义的声速图c，获得从（x0，z0）到（x1，z1）的ToF。
     x0:     [...]       Path origin in x (arbitrary dimensions, broadcasting allowed)
@@ -18,53 +46,19 @@ def time_of_flight(x0, z0, x1, z1, xc, zc, c, fnum, npts, Dmin=3e-3):
     """
 
     # 创建路径采样点 t_all
-    t_all = torch.tensor(
-        np.ascontiguousarray(
-            np.linspace(1, 0, npts, endpoint=False)[::-1]),
-    device=x0.device)  # t 取值从 1 到 0，反转顺序  # t 取值从 1 到 0，反转顺序
+    t_all = torch.linspace(1, 0, npts + 1, device=x0.device)[:-1].flip(0)
 
     # 定义慢速图 (slowness map)
     s = 1 / c
-
-    def interpolate(t):
-        xt = t * (x1 - x0) + x0  # x在t间距的空间位置
-        zt = t * (z1 - z0) + z0  # z在t间距的空间位置
-
-        # 将空间位置转换为在慢度图中的xc和zc坐标中的索引
-        dxc, dzc = xc[1] - xc[0], zc[1] - zc[0]  # 网格间距
-        # 在慢度图中获取xt、zt的索引，并保证该索引始终在有效范围[0, s.shape[0] - 1]内
-        xit = torch.clip((xt - xc[0]) / dxc, 0, s.shape[0] - 1)
-        zit = torch.clip((zt - zc[0]) / dzc, 0, s.shape[1] - 1)
-        # 找到左下邻居点和右上邻居点的索引
-        xi0 = torch.floor(xit)
-        zi0 = torch.floor(zit)
-        xi1 = xi0 + 1
-        zi1 = zi0 + 1
-
-        # （xt，zt）处的插值慢速
-        # 插值点周围的四个网格点分别为 (xi0, zi0)、(xi1, zi0)、(xi0, zi1) 和 (xi1, zi1)
-        s00 = s[xi0.int(), zi0.int()]
-        # print(s00)
-        s10 = s[torch.clip(xi1, 0, s.shape[0] - 1).int(), zi0.int()]
-        s01 = s[xi0.int(), torch.clip(zi1, 0, s.shape[0] - 1).int()]
-        s11 = s[torch.clip(xi1, 0, s.shape[0] - 1).int(), torch.clip(zi1, 0, s.shape[0] - 1).int()]
-        # 双线性插值
-        w00 = (xi1 - xit) * (zi1 - zit)
-        w10 = (xit - xi0) * (zi1 - zit)
-        w01 = (xi1 - xit) * (zit - zi0)
-        w11 = (xit - xi0) * (zit - zi0)
-        return s00 * w00 + s10 * w10 + s01 * w01 + s11 * w11
 
     # 计算飞行时间 (ToF)
     dx = torch.abs(x1 - x0)
     dz = torch.abs(z1 - z0)
     dtrue = torch.sqrt(dx**2 + dz**2)
     # 对所有采样点 t_all 应用插值函数
-    # slowness = interpolate(t_all[0])
-    slowness = vmap(interpolate)(t_all)
+    slowness = torch.stack([interpolate(t, x0, z0, x1, z1, xc, zc, s) for t in t_all])
     # tof 作为 slowness 的均值乘以距离 dtrue
     tof = torch.nanmean(slowness, dim=0) * dtrue
-    # print(tof)
 
     # F-number mask for valid points（有效点条件1：焦点的横向宽度不应过大）
     fnum_valid = torch.abs(2 * fnum * dx) <= dz

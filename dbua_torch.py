@@ -16,6 +16,8 @@ from losses_torch import (
     speckle_brightness,
 )
 import time
+from torch import jit
+from torch import compile
 import torch.optim as optim
 
 
@@ -133,7 +135,7 @@ def plot_errors_vs_sound_speeds(c0, dsb, dlc, dcf, dpe, sample):
     plt.ylabel("Loss function")
     plt.title(sample)
     plt.legend()
-    plt.savefig(f"images/losses_{sample}_torch.png")
+    plt.savefig(f"images/losses_{sample}_torch.png", bbox_inches="tight", dpi=750)
     plt.clf()
 
 
@@ -198,10 +200,10 @@ def main(sample, loss_name):
 
     # Compute time-of-flight for each {image, patch} pixel to each element
     def tof_image(c):
-        return time_of_flight(xe, ze, xi, zi, xc, zc, c, fnum=0.5, npts=64)
+        return time_of_flight(xe, ze, xi, zi, xc, zc, c, fnum=0.5, npts=64, Dmin=3e-3)
 
     def tof_patch(c):
-        return time_of_flight(xe, ze, xp, zp, xc, zc, c, fnum=0.5, npts=64)
+        return time_of_flight(xe, ze, xp, zp, xc, zc, c, fnum=0.5, npts=64, Dmin=3e-3)
 
     def makeImage(c):
         t = tof_image(c)
@@ -237,24 +239,26 @@ def main(sample, loss_name):
         else:
             NotImplementedError
 
-    # Initial survey of losses vs. global sound speed
-    c = to_cuda(ASSUMED_C * torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))
-
-    # find optimal global sound speed for initalization
-    c0 = to_cuda(torch.linspace(1340, 1740, 201))
-    dsb = torch.tensor([sb_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
-    dlc = torch.tensor([lc_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
-    dcf = torch.tensor([cf_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
-    dpe = torch.tensor([pe_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
-    # Use the sound speed with the optimal phase error to initialize sound speed map
-    c = c0[torch.argmin(dpe)] * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))
-
-    # Plot global sound speed error
-    plot_errors_vs_sound_speeds(c0.cpu(), dsb.cpu(), dlc.cpu(), dcf.cpu(), dpe.cpu(), sample)
+    # # Initial survey of losses vs. global sound speed
+    # c = to_cuda(ASSUMED_C * torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))
+    #
+    # # find optimal global sound speed for initialization
+    # print("Finding optimal global sound speed for initialization...")
+    # c0 = to_cuda(torch.linspace(1340, 1740, 201))
+    # dsb = torch.tensor([sb_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
+    # dlc = torch.tensor([lc_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
+    # dcf = torch.tensor([cf_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
+    # dpe = torch.tensor([pe_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
+    # # Use the sound speed with the optimal phase error to initialize sound speed map
+    # c = c0[torch.argmin(dpe)] * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))
+    #
+    # # Plot global sound speed error
+    # plot_errors_vs_sound_speeds(c0.cpu(), dsb.cpu(), dlc.cpu(), dcf.cpu(), dpe.cpu(), sample)
 
     # Create the optimizer
-    c = torch.tensor(c, requires_grad=True)
-    optimizer = optim.Adam([c], lr=LEARNING_RATE)
+    c = 1490.0 * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) # test sound speed
+    c = c.clone().detach().requires_grad_(True)
+    optimizer = optim.Adam([c], lr=LEARNING_RATE, amsgrad=True)
 
     # Create the figure writer
     fig, _ = plt.subplots(1, 2, figsize=[9, 4])
@@ -272,93 +276,75 @@ def main(sample, loss_name):
     cmap = "seismic" if CTRUE[sample] > 0 else "jet"
 
     # Create a nice figure on first call, update on subsequent calls
+    @torch.no_grad()
     def makeFigure(cimg, i, handles=None):
         b = makeImage(cimg)
         if handles is None:
-            bmax = np.max(b)
+            bmax = torch.max(b)
         else:
             hbi, hci, hbt, hct, bmax = handles
         bimg = b / bmax
         bimg = bimg + 1e-10 * (bimg == 0)  # Avoid nans
-        bimg = 20 * np.log10(bimg)
-        bimg = np.reshape(bimg, (nxi, nzi)).T
-        cimg = np.reshape(cimg, (SOUND_SPEED_NXC, SOUND_SPEED_NZC)).T
+        bimg = 20 * torch.log10(bimg)
+        bimg = torch.reshape(bimg, (nxi, nzi)).T
+        cimg = torch.reshape(cimg, (SOUND_SPEED_NXC, SOUND_SPEED_NZC)).T
 
         if handles is None:
-            # On the first call, report the fps of jax
-            tic = time.perf_counter_ns()
-            for _ in range(30):
-                b = makeImage(cimg)
-            # b.block_until_ready()
-            toc = time.perf_counter_ns()
-            print("jaxbf runs at %.1f fps." % (100.0 / ((toc - tic) * 1e-9)))
-
             # On the first time, create the figure
             fig.clf()
             plt.subplot(121)
-            hbi = imagesc(ximm, zimm, bimg, bdr, cmap="bone",
-                          interpolation="bicubic")
-            hbt = plt.title(
-                "SB: %.2f, CF: %.3f, PE: %.3f" % (
-                    sb_loss(c), cf_loss(c), pe_loss(c))
-            )
-            plt.xlim(ximm[0], ximm[-1])
-            plt.ylim(zimm[-1], zimm[0])
+            hbi = imagesc(ximm.cpu(), zimm.cpu(), bimg.cpu(), bdr,
+                          cmap="bone",interpolation="bicubic")
+            hbt = plt.title("SB: %.2f, CF: %.3f, PE: %.3f" %
+                            (sb_loss(c), cf_loss(c), pe_loss(c)))
+            plt.xlim(ximm[0].cpu(), ximm[-1].cpu())
+            plt.ylim(zimm[-1].cpu(), zimm[0].cpu())
             plt.subplot(122)
-            hci = imagesc(xcmm, zcmm, cimg, cdr, cmap=cmap,
-                          interpolation="bicubic")
+            hci = imagesc(xcmm.cpu(), zcmm.cpu(), cimg.cpu(), cdr,
+                          cmap=cmap,interpolation="bicubic")
             if CTRUE[sample] > 0:  # When ground truth is provided, show the error
-                hct = plt.title(
-                    "Iteration %d: MAE %.2f"
-                    % (i, np.mean(np.abs(cimg - CTRUE[sample])))
-                )
+                hct = plt.title("Iteration %d: MAE %.2f" %
+                                (i, np.mean(np.abs(cimg.cpu() - CTRUE[sample]))))
             else:
                 hct = plt.title("Iteration %d: Mean value %.2f" %
-                                (i, np.mean(cimg)))
+                                (i, torch.mean(cimg)))
 
-            plt.xlim(ximm[0], ximm[-1])
-            plt.ylim(zimm[-1], zimm[0])
+            plt.xlim(ximm[0].cpu(), ximm[-1].cpu())
+            plt.ylim(zimm[-1].cpu(), zimm[0].cpu())
             fig.tight_layout()
             return hbi, hci, hbt, hct, bmax
         else:
-            hbi.set_data(bimg)
-            hci.set_data(cimg)
-            hbt.set_text(
-                "SB: %.2f, CF: %.3f, PE: %.3f" % (
-                    sb_loss(c), cf_loss(c), pe_loss(c))
-            )
+            hbi.set_data(bimg.cpu())
+            hci.set_data(cimg.cpu())
+            hbt.set_text("SB: %.2f, CF: %.3f, PE: %.3f" %
+                         (sb_loss(c), cf_loss(c), pe_loss(c)))
             if CTRUE[sample] > 0:
-                hct.set_text(
-                    "Iteration %d: MAE %.2f"
-                    % (i, np.mean(np.abs(cimg - CTRUE[sample])))
-                )
+                hct.set_text("Iteration %d: MAE %.2f" %
+                             (i, np.mean(np.abs(cimg.cpu() - CTRUE[sample]))))
             else:
                 hct.set_text("Iteration %d: Mean value %.2f" %
-                             (i, np.mean(cimg)))
+                             (i, torch.mean(cimg)))
 
         plt.savefig(f"scratch/{sample}.png")
 
     # Initialize figure
-    handles = makeFigure(c, 0)
+    # handles = makeFigure(c, 0)
 
     # 优化循环初始化
+    print("Optimization loop...")
     for i in tqdm(range(N_ITERS)):
         optimizer.zero_grad()  # 清除梯度缓存
         loss_value = loss(c)  # 计算损失
         loss_value.backward()  # 计算梯度
         optimizer.step()  # 更新参数
-        makeFigure(c, i + 1, handles)  # Update figure
-        vobj.grab_frame()  # Add to video writer
-    vobj.finish()  # Close video writer
+
+    #     makeFigure(c, i + 1, handles)  # Update figure
+    #     vobj.grab_frame()  # Add to video writer
+    # vobj.finish()  # Close video writer
 
     return c
 
 
 if __name__ == "__main__":
     main(SAMPLE, LOSS)
-
-    # # Run all examples
-    # for sample in CTRUE.keys():
-    #     print(sample)
-    #     main(sample, LOSS)
 
