@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from das_torch import das
+from das import das
 
 
 def lag_one_coherence(iq, t_tx, t_rx, fs, fd):
@@ -95,3 +95,5 @@ def phase_error(iq, t_tx, t_rx, fs, fd, thresh=0.9):
     xy = torch.triu(xy) + torch.conj(torch.tril(xy)).permute(0, 2, 1)
     dphi = torch.angle(xy)  # 计算相位
     return dphi
+
+
