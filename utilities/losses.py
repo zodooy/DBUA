@@ -1,6 +1,5 @@
 import torch
-import numpy as np
-from das import das
+from scripts.das import das
 
 
 def lag_one_coherence(iq, t_tx, t_rx, fs, fd):

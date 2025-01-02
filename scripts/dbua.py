@@ -26,7 +26,7 @@ def to_cuda(tensor):
     return tensor
 
 
-def main(sample, loss_name, device):
+def dbua(sample, loss_name, device):
     # Get IQ data, time zeros, sampling and demodulation frequency, and element positions
     iqdata, t0, fs, fd, elpos, _, _ = load_dataset(sample)
     xe, _, ze = np.array(elpos)
@@ -209,9 +209,4 @@ def main(sample, loss_name, device):
     vobj.finish()  # Close video writer
 
     return c
-
-
-if __name__ == "__main__":
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    main(SAMPLE, LOSS, device)
 
