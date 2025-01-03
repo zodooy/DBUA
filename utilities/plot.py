@@ -23,5 +23,16 @@ def plot_errors_vs_sound_speeds(c0, dsb, dlc, dcf, dpe, sample):
     plt.ylabel("Loss function")
     plt.title(sample)
     plt.legend()
-    plt.savefig(f"images/losses_{sample}_torch.png", bbox_inches="tight", dpi=750)
+    plt.savefig(f"images/losses_{sample}.png", bbox_inches="tight", dpi=750)
+    plt.clf()
+
+
+def plot_loss(losses, sample):
+    plt.clf()
+    plt.plot(losses, label=sample)
+    plt.grid()
+    plt.xlabel("Iteration steps")
+    plt.ylabel("Loss")
+    plt.title(sample)
+    plt.savefig(f"losses/optimize_{sample}.png", bbox_inches="tight", dpi=750)
     plt.clf()
