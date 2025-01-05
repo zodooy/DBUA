@@ -47,3 +47,13 @@ def das(iqraw, tA, tB, fs, fd, A=None, B=None, apoA=1, apoB=1, interp="cubic"):
     # 外层函数：处理多个发射通道
     return torch.tensordot(A.to(torch.complex128), torch.stack([das_b(x) for x in zip(iqraw, tA)]) * apoA, dims=([-1], [0]))
 
+    # # 提高并行程度以加速，但可能会占用更多资源
+    # # 内层函数：处理单个接收通道
+    # def das_b(iq_i, tA_i):
+    #     return torch.tensordot(B.to(torch.complex128), vmap(bbint)(iq_i, tA_i + tB) * apoB, dims=([-1], [0]))
+    #
+    # # 外层函数：处理多个发射通道
+    # return torch.tensordot(A.to(torch.complex128), vmap(bbint)(iqraw, tA) * apoA, dims=([-1], [0]))
+
+
+
