@@ -29,7 +29,8 @@ def to_cuda(tensor):
 
 def dbua(sample, loss_name):
     device = "cuda" if torch.cuda.is_available() else "cpu"
-
+    print(device)
+    
     # Get IQ data, time zeros, sampling and demodulation frequency, and element positions
     iqdata, t0, fs, fd, elpos, _, _ = load_dataset(sample)
     xe, _, ze = np.array(elpos)
