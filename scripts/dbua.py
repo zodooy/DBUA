@@ -134,7 +134,6 @@ def dbua(sample, loss_name):
 
 
     # Create the optimizer
-    c = 1490.0 * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) # test sound speed
     c = c.clone().detach().requires_grad_(True)
     optimizer = optim.Adam([c], lr=LEARNING_RATE, amsgrad=True)
 
