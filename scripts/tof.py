@@ -29,6 +29,12 @@ def time_of_flight(x0, z0, x1, z1, xc, zc, c, fnum: float, npts: int, Dmin: floa
 
     # 对所有采样点 t_all 应用插值函数
     slowness = torch.stack([interpolate(t, x0, z0, x1, z1, xc, zc, s) for t in t_all])
+
+    # # 提高并行程度以加速，但可能会占用更多资源
+    # # 对所有采样点 t_all 应用插值函数
+    # slowness = (torch.vmap(interpolate, (0, None, None, None, None, None, None, None))
+    #             (t_all, x0, z0, x1, z1, xc, zc, s))
+
     # tof 作为 slowness 的均值乘以距离 dtrue
     tof = torch.nanmean(slowness, dim=0) * dtrue
 

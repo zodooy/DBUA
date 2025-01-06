@@ -34,5 +34,5 @@ def plot_loss(losses, sample):
     plt.xlabel("Iteration steps")
     plt.ylabel("Loss")
     plt.title(sample)
-    plt.savefig(f"losses/optimize_{sample}.png", bbox_inches="tight", dpi=750)
+    plt.savefig(f"images/optimize_{sample}.png", bbox_inches="tight", dpi=750)
     plt.clf()
