@@ -19,6 +19,8 @@ from utilities.losses import (
     speckle_brightness,
 )
 import torch.optim as optim
+torch.backends.cudnn.deterministic = False
+torch.backends.cudnn.benchmark = True 
 
 
 def to_cuda(tensor):
@@ -26,6 +28,9 @@ def to_cuda(tensor):
         return tensor.cuda()
     return tensor
 
+
+OPTIMIZE_GLOBAL_SOS = False
+MAKE_VIDEO = False
 
 def dbua(sample, loss_name):
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -120,22 +125,26 @@ def dbua(sample, loss_name):
     # Initial survey of losses vs. global sound speed
     c = to_cuda(ASSUMED_C * torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))
 
-    # find optimal global sound speed for initialization
-    print("Finding optimal global sound speed for initialization...")
-    c0 = to_cuda(torch.linspace(1340, 1740, 201))
-    dsb = torch.tensor([sb_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
-    dlc = torch.tensor([lc_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
-    dcf = torch.tensor([cf_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
-    dpe = torch.tensor([pe_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
-    # Use the sound speed with the optimal phase error to initialize sound speed map
-    c = c0[torch.argmin(dpe)] * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))
+    if OPTIMIZE_GLOBAL_SOS:
+        # find optimal global sound speed for initialization
+        print("Finding optimal global sound speed for initialization...")
+        c0 = to_cuda(torch.linspace(1340, 1740, 201))
+        dsb = torch.tensor([sb_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
+        dlc = torch.tensor([lc_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
+        dcf = torch.tensor([cf_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
+        dpe = torch.tensor([pe_loss(cc * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))) for cc in c0])
+        
+        # Use the sound speed with the optimal phase error to initialize sound speed map
+        c_init = c0[torch.argmin(dpe)]
+        print('Optimal Global SoS:', c_init)
+        c = c_init * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC)))
 
-    # Plot global sound speed error
-    plot_errors_vs_sound_speeds(c0.cpu(), dsb.cpu(), dlc.cpu(), dcf.cpu(), dpe.cpu(), sample)
-
-
+        # Plot global sound speed error
+        plot_errors_vs_sound_speeds(c0.cpu(), dsb.cpu(), dlc.cpu(), dcf.cpu(), dpe.cpu(), sample)
+    else:
+        c = ASSUMED_C * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) # homogeneous sound speed
+    
     # Create the optimizer
-    # c = 1490.0 * to_cuda(torch.ones((SOUND_SPEED_NXC, SOUND_SPEED_NZC))) # test sound speed
     c = c.clone().detach().requires_grad_(True)
     optimizer = optim.Adam([c], lr=LEARNING_RATE, amsgrad=True)
 
@@ -174,6 +183,7 @@ def dbua(sample, loss_name):
             plt.subplot(121)
             hbi = imagesc(ximm.cpu(), zimm.cpu(), bimg.cpu(), bdr, cmap="bone", interpolation="bicubic")
             hbt = plt.title("SB: %.2f, CF: %.3f, PE: %.3f" % (sb_loss(c), cf_loss(c), pe_loss(c)))
+    
             plt.xlim(ximm[0].cpu(), ximm[-1].cpu())
             plt.ylim(zimm[-1].cpu(), zimm[0].cpu())
             plt.subplot(122)
@@ -203,18 +213,24 @@ def dbua(sample, loss_name):
     l = torch.tensor([1], device=device)
 
     handles = makeFigure(c, 0)
+    plt.savefig(f"scratch/{sample}_init.png")
+    if MAKE_VIDEO: vobj.grab_frame()
 
-    # 优化循环初始化
-    for i in tqdm(range(N_ITERS)):
-        optimizer.zero_grad()
-        loss_value = loss(c)
-        l = torch.cat((l, loss_value.unsqueeze(0)))
-        loss_value.backward()
-        optimizer.step()
-        makeFigure(c, i + 1, handles)  # Update figure
-        vobj.grab_frame()  # Add to video writer
-    vobj.finish()  # Close video writer
-
+    # Optimization loop
+    with tqdm(range(N_ITERS), desc="DBUA", unit="iter") as pbar:
+        for i in pbar:
+            optimizer.zero_grad()
+            loss_value = loss(c)
+            l = torch.cat((l, loss_value.unsqueeze(0)))
+            loss_value.backward()
+            optimizer.step()
+            if MAKE_VIDEO:
+                makeFigure(c, i + 1, handles)  # Update figure
+                vobj.grab_frame()  # Add to video writer
+            pbar.set_postfix(loss=loss_value.item())
+    if MAKE_VIDEO:  vobj.finish()  # Close video writer
+    
+    makeFigure(c, N_ITERS, handles)
     plot_loss(l[1:].detach().cpu(), sample)
 
     return c
