@@ -29,7 +29,7 @@ def to_cuda(tensor):
     return tensor
 
 
-OPTIMIZE_GLOBAL_SOS = False
+OPTIMIZE_GLOBAL_SOS = True
 MAKE_VIDEO = False
 
 def dbua(sample, loss_name):
@@ -217,7 +217,7 @@ def dbua(sample, loss_name):
     if MAKE_VIDEO: vobj.grab_frame()
 
     # Optimization loop
-    with tqdm(range(N_ITERS), desc="DBUA", unit="iter") as pbar:
+    with tqdm(range(N_ITERS), desc=sample, unit="iter") as pbar:
         for i in pbar:
             optimizer.zero_grad()
             loss_value = loss(c)
