@@ -18,6 +18,7 @@ SOUND_SPEED_Z_MIN = 0e-3
 SOUND_SPEED_Z_MAX = 40e-3
 SOUND_SPEED_NXC = 19
 SOUND_SPEED_NZC = 31
+LAMBDA_TV = 1e2
 
 # Phase estimate kernel size in samples
 NXK, NZK = 5, 5

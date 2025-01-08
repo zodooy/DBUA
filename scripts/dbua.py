@@ -29,8 +29,8 @@ def to_cuda(tensor):
     return tensor
 
 
-OPTIMIZE_GLOBAL_SOS = True
-MAKE_VIDEO = False
+OPTIMIZE_GLOBAL_SOS = False
+MAKE_VIDEO = True
 
 def dbua(sample, loss_name):
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -111,13 +111,13 @@ def dbua(sample, loss_name):
 
     def loss(c):
         if loss_name == "sb":  # Speckle brightness
-            return sb_loss(c) + tv(c) * 1e2
+            return sb_loss(c) + tv(c) * LAMBDA_TV
         elif loss_name == "lc":  # Lag one coherence
-            return lc_loss(c) + tv(c) * 1e2
+            return lc_loss(c) + tv(c) * LAMBDA_TV
         elif loss_name == "cf":  # Coherence factor
-            return cf_loss(c) + tv(c) * 1e2
+            return cf_loss(c) + tv(c) * LAMBDA_TV
         elif loss_name == "pe":  # Phase error
-            return pe_loss(c) + tv(c) * 1e2
+            return pe_loss(c) + tv(c) * LAMBDA_TV
         else:
             assert False
 
@@ -150,8 +150,10 @@ def dbua(sample, loss_name):
 
     # Create the figure writer
     fig, _ = plt.subplots(1, 2, figsize=[9, 4])
-    vobj = FFMpegWriter(fps=30)
-    vobj.setup(fig, "videos/%s_opt%s.mp4" % (sample, loss_name), dpi=144)
+
+    if MAKE_VIDEO:
+        vobj = FFMpegWriter(fps=30)
+        vobj.setup(fig, "videos/%s_opt%s.mp4" % (sample, loss_name), dpi=144)
 
     # Create the image axes for plotting
     ximm = xi[:, 0] * 1e3
@@ -165,7 +167,7 @@ def dbua(sample, loss_name):
 
     # Create a nice figure on first call, update on subsequent calls
     @torch.no_grad()
-    def makeFigure(cimg, i, handles=None):
+    def makeFigure(cimg, i, handles=None, pbar=None):
         b = makeImage(cimg)
         if handles is None:
             bmax = torch.max(b)
@@ -176,13 +178,13 @@ def dbua(sample, loss_name):
         bimg = 20 * torch.log10(bimg)
         bimg = torch.reshape(bimg, (nxi, nzi)).T
         cimg = torch.reshape(cimg, (SOUND_SPEED_NXC, SOUND_SPEED_NZC)).T
-
+        losses = (sb_loss(c).item(), cf_loss(c).item(), pe_loss(c).item(), tv(c).item() * LAMBDA_TV)
         if handles is None:
             # On the first time, create the figure
             fig.clf()
             plt.subplot(121)
-            hbi = imagesc(ximm.cpu(), zimm.cpu(), bimg.cpu(), bdr, cmap="bone", interpolation="bicubic")
-            hbt = plt.title("SB: %.2f, CF: %.3f, PE: %.3f" % (sb_loss(c), cf_loss(c), pe_loss(c)))
+            hbi = imagesc(ximm.cpu(), zimm.cpu(), bimg.cpu(), bdr, cmap="gray", interpolation="bicubic")
+            hbt = plt.title("SB: %.2f, CF: %.3f, PE: %.3f, TV: %.3f" % losses)
     
             plt.xlim(ximm[0].cpu(), ximm[-1].cpu())
             plt.ylim(zimm[-1].cpu(), zimm[0].cpu())
@@ -200,12 +202,13 @@ def dbua(sample, loss_name):
         else:
             hbi.set_data(bimg.cpu())
             hci.set_data(cimg.cpu())
-            hbt.set_text("SB: %.2f, CF: %.3f, PE: %.3f" % (sb_loss(c), cf_loss(c), pe_loss(c)))
+            hbt.set_text("SB: %.2f, CF: %.3f, PE: %.3f, TV: %.3f" % losses)
             if CTRUE[sample] > 0:
                 hct.set_text("Iteration %d: MAE %.2f" % (i, torch.mean(torch.abs(cimg - CTRUE[sample]))))
             else:
                 hct.set_text("Iteration %d: Mean value %.2f" % (i, torch.mean(cimg)))
 
+        if pbar: pbar.set_postfix(sb=losses[0], cf=losses[1], pe=losses[2], tv=losses[3])
         plt.savefig(f"scratch/{sample}.png")
 
     # Initialize figure
@@ -225,12 +228,14 @@ def dbua(sample, loss_name):
             loss_value.backward()
             optimizer.step()
             if MAKE_VIDEO:
-                makeFigure(c, i + 1, handles)  # Update figure
+                makeFigure(c, i + 1, handles, pbar)  
                 vobj.grab_frame()  # Add to video writer
-            pbar.set_postfix(loss=loss_value.item())
+            else:
+                pbar.set_postfix(loss=loss_value.item())
+
     if MAKE_VIDEO:  vobj.finish()  # Close video writer
     
-    makeFigure(c, N_ITERS, handles)
+    makeFigure(c, N_ITERS)
     plot_loss(l[1:].detach().cpu(), sample)
 
     return c

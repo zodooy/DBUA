@@ -1,5 +1,6 @@
-numpy~=1.26.4
-matplotlib~=3.9.2
-torch~=2.5.1+cu124
-hdf5storage~=0.1.19
-tqdm~=4.67.1
+hdf5storage==0.1.19
+matplotlib==3.9.4
+numpy==2.0.2
+torch==2.5.1+cu124
+tqdm==4.66.1
+typing_extensions
